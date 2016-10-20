@@ -28,21 +28,19 @@ var stopCommand = "sudo killall openshift || true"
 var startCommandFmtStr = `
 # Run with nohup so it stays up. Redirect logs to useful places.
 cd /var/lib/minishift;
-if [ ! -f openshift.local.config/master/master-config.yaml ]; then
-    sudo /usr/local/bin/openshift start --listen=https://0.0.0.0:%d --cors-allowed-origins=.* --master=https://%s:%d --write-config=openshift.local.config;
-    sudo /usr/local/bin/openshift ex config patch openshift.local.config/master/master-config.yaml --patch='{"routingConfig": {"subdomain": "%s.xip.io"}}' > /tmp/master-config.yaml;
-    sudo mv /tmp/master-config.yaml openshift.local.config/master/master-config.yaml;
-		sudo /usr/local/bin/openshift ex config patch openshift.local.config/master/master-config.yaml --patch='{"kubernetesMasterConfig": {"controllerArguments": {"enable-hostpath-provisioner": ["true"]}}}' > /tmp/master-config.yaml;
-    sudo mv /tmp/master-config.yaml openshift.local.config/master/master-config.yaml;
-    sudo /usr/local/bin/openshift ex config patch openshift.local.config/node-minishift/node-config.yaml --patch='{"nodeIP": "%s"}}' > /tmp/node-config.yaml;
-    sudo mv /tmp/node-config.yaml openshift.local.config/node-minishift/node-config.yaml;
-fi;
-sudo sh -c 'PATH=/usr/local/sbin:$PATH nohup /usr/local/bin/openshift start --master-config=openshift.local.config/master/master-config.yaml --node-config=openshift.local.config/node-$(hostname | tr '[:upper:]' '[:lower:]')/node-config.yaml> %s 2> %s < /dev/null &'
+sudo mkdir -p /mnt/sda1/var/lib/minishift/openshift.local.volumes /mnt/sda1/var/lib/minishift/openshift.local.config /mnt/sda1/var/lib/minishift/openshift.local.etcd || true
+sudo sh -c 'PATH=/usr/local/sbin:$PATH nohup openshift cli cluster up \
+		--host-config-dir=$(pwd)/openshift.local.config \
+		--host-data-dir=$(pwd)/openshift.local.etcd \
+		--host-volumes-dir=$(pwd)/openshift.local.volumes \
+		--routing-suffix=%s.nip.io \
+		--use-existing-config \
+		> %s 2> %s < /dev/null &'
 until $(curl --output /dev/null --silent --fail -k https://localhost:%d/healthz/ready); do
     printf '.'
     sleep 1
 done;
-sudo /usr/local/bin/openshift admin policy add-cluster-role-to-user cluster-admin admin --config=openshift.local.config/master/admin.kubeconfig
+sudo /usr/local/bin/openshift admin policy add-cluster-role-to-user cluster-admin admin --config=$(pwd)/openshift.local.config/master/admin.kubeconfig
 `
 
 var (
@@ -51,5 +49,5 @@ var (
 )
 
 func GetStartCommand(ip string) string {
-	return fmt.Sprintf(startCommandFmtStr, constants.APIServerPort, ip, constants.APIServerPort, ip, ip, constants.RemoteOpenShiftErrPath, constants.RemoteOpenShiftOutPath, constants.APIServerPort)
+	return fmt.Sprintf(startCommandFmtStr, ip, constants.RemoteOpenShiftErrPath, constants.RemoteOpenShiftOutPath, constants.APIServerPort)
 }
